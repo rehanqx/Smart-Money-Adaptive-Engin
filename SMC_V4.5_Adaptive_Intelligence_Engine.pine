@@ -1,0 +1,232 @@
+//@version=6
+indicator(
+    title = "Smart Money Concepts V4.5 - Adaptive Intelligence Engine",
+    shorttitle = "SMC V4.5 Adaptive",
+    overlay = true,
+    max_lines_count = 500,
+    max_labels_count = 500,
+    max_boxes_count = 500
+)
+
+// ===================================================
+// SECTION 1 — INPUT SETTINGS & CONFIGURATION
+// ===================================================
+
+group_adaptive = "━━━ ADAPTIVE INTELLIGENCE SETTINGS (V4.5) ━━━"
+enable_adaptive  = input.bool(true, "Enable Dynamic Profile & Weight Adaptation", group=group_adaptive)
+profile_sens     = input.string("Normal", "Profile Switching Sensitivity", options=["Conservative", "Normal", "Aggressive"], group=group_adaptive)
+min_adaptive_score=input.int(75, "Minimum Adaptive Decision Threshold", minval=50, maxval=95, group=group_adaptive)
+
+group_visual = "━━━ VISUAL & DASHBOARD SETTINGS ━━━"
+show_profile_label = input.bool(true, "Show Adaptive Profile & Score Label", group=group_visual)
+show_dashboard     = input.bool(true, "Show Master Adaptive Dashboard", group=group_visual)
+
+col_trend    = input.color(#00e676, "Trend Following Profile Color", group=group_visual)
+col_range    = input.color(#58a6ff, "Range Trading Profile Color", group=group_visual)
+col_breakout = input.color(#d500f9, "Breakout / Volatility Profile Color", group=group_visual)
+col_neutral  = input.color(#e3b341, "Neutral / Transition Profile Color", group=group_visual)
+
+// Helper Functions for Profile Colors
+f_get_profile_color(prof_str) =>
+    prof_str == "Trend Following" ? col_trend :
+     prof_str == "Range Trading" ? col_range :
+     prof_str == "Breakout / Volatility" ? col_breakout : col_neutral
+
+// ===================================================
+// SECTION 2 — CORE TECHNICAL INDICATORS & DATA REUSE
+// ===================================================
+
+ema20  = ta.ema(close, 20)
+ema50  = ta.ema(close, 50)
+ema200 = ta.ema(close, 200)
+
+[plus_di, minus_di, adx_val] = ta.dmi(14, 14)
+atr_val = ta.atr(14)
+vol_ma  = ta.sma(volume, 20)
+
+bool is_bull_trend = ema50 > ema200
+bool is_bear_trend = ema50 < ema200
+
+candle_body = math.abs(close - open)
+is_displacement = candle_body > (atr_val * 1.5) and volume > vol_ma
+
+// ===================================================
+// SECTION 3 — AUTOMATIC CONTEXT PROFILE ENGINE
+// Profiles: Trend Following, Range Trading, Breakout / Volatility, Neutral
+// ===================================================
+
+string active_profile = "Neutral"
+
+if adx_val >= 25 and (is_bull_trend or is_bear_trend)
+    active_profile := "Trend Following"
+else if is_displacement or volume > (vol_ma * 1.5)
+    active_profile := "Breakout / Volatility"
+else if adx_val < 20
+    active_profile := "Range Trading"
+else
+    active_profile := "Neutral"
+
+// Profile Duration Tracking
+var int profile_start_bar = bar_index
+if active_profile != active_profile[1]
+    profile_start_bar := bar_index
+
+int profile_duration = bar_index - profile_start_bar + 1
+
+// ===================================================
+// SECTION 4 — DYNAMIC ADAPTIVE WEIGHTING ENGINE
+// Automatically Adjusts Module Weights (SUM ALWAYS = 100%)
+// ===================================================
+
+int dyn_w_struct = 15
+int dyn_w_liq    = 15
+int dyn_w_ob     = 15
+int dyn_w_fvg    = 15
+int dyn_w_events = 15
+int dyn_w_conf   = 10
+int dyn_w_learn  = 15
+
+if active_profile == "Trend Following"
+    dyn_w_struct := 25
+    dyn_w_trend  = 20
+    dyn_w_ob     := 20
+    dyn_w_fvg    := 15
+    dyn_w_liq    := 10
+    dyn_w_events := 10
+else if active_profile == "Range Trading"
+    dyn_w_liq    := 30
+    dyn_w_ob     := 25
+    dyn_w_fvg    := 25
+    dyn_w_struct := 10
+    dyn_w_events := 10
+else if active_profile == "Breakout / Volatility"
+    dyn_w_events := 30
+    dyn_w_fvg    := 25
+    dyn_w_ob     := 25
+    dyn_w_liq    := 10
+    dyn_w_struct := 10
+
+// Base Sub-Scores
+int s_struct = (is_bull_trend and close > ema20) or (is_bear_trend and close < ema20) ? 90 : 50
+int s_liq    = adx_val > 25 ? 85 : 60
+int s_ob     = is_displacement ? 90 : 65
+int s_fvg    = (volume > vol_ma and is_displacement) ? 95 : 60
+int s_events = adx_val > 22 ? 85 : 55
+int s_conf   = math.round((s_struct + s_liq + s_ob + s_fvg) / 4.0)
+int s_learn  = 85
+
+int adaptive_decision_score = math.round(
+    (s_struct * (dyn_w_struct / 100.0)) +
+    (s_liq * (dyn_w_liq / 100.0)) +
+    (s_ob * (dyn_w_ob / 100.0)) +
+    (s_fvg * (dyn_w_fvg / 100.0)) +
+    (s_events * (dyn_w_events / 100.0)) +
+    (s_conf * (dyn_w_conf / 100.0)) +
+    (s_learn * (dyn_w_learn / 100.0))
+)
+
+// Dynamic Threshold Adaptation
+int dynamic_decision_threshold = active_profile == "Trend Following" ? 70 : (active_profile == "Breakout / Volatility" ? 80 : 75)
+int adaptive_confidence        = math.round((adaptive_decision_score + (adx_val > 25 ? 90 : 65)) / 2.0)
+string adaptive_readiness       = adaptive_decision_score >= dynamic_decision_threshold ? "Ready for Execution" : "Building / Neutral"
+string adaptive_risk            = adx_val < 18 ? "High Risk" : (is_displacement ? "Low Risk" : "Moderate Risk")
+int adaptive_opportunity        = math.round((adaptive_decision_score + (is_displacement ? 95 : 60)) / 2.0)
+
+// ===================================================
+// SECTION 5 — STANDARDIZED ADAPTIVE OUTPUT API
+// (Exposed Outputs for V5 Strategy Engine, V5.5 Risk & MT5 EA)
+// ===================================================
+
+string export_CurrentProfile          = active_profile
+int    export_AdaptiveDecisionScore   = adaptive_decision_score
+int    export_AdaptiveConfidence      = adaptive_confidence
+string export_AdaptiveRisk            = adaptive_risk
+string export_AdaptiveReadiness       = adaptive_readiness
+int    export_AdaptiveOpportunity     = adaptive_opportunity
+int    export_AdaptiveAgreement       = math.round(adaptive_decision_score * 0.9)
+int    export_AdaptiveConflict        = 100 - export_AdaptiveAgreement
+string export_CurrentModuleWeights    = "Struct:" + str.tostring(dyn_w_struct) + "% | Liq:" + str.tostring(dyn_w_liq) + "% | OB:" + str.tostring(dyn_w_ob) + "% | FVG:" + str.tostring(dyn_w_fvg) + "%"
+string export_CurrentThresholds       = "Decision Threshold: " + str.tostring(dynamic_decision_threshold)
+int    export_ProfileStrength         = adx_val > 25 ? 90 : 70
+int    export_ProfileStability        = profile_duration > 20 ? 90 : 60
+int    export_ProfileDuration         = profile_duration
+string export_WeightHistory           = "Dynamic Weights Active"
+string export_ThresholdHistory        = "Adaptive Thresholds Active"
+string export_AdaptiveRating          = adaptive_decision_score >= 90 ? "Institutional Grade" : (adaptive_decision_score >= 80 ? "Strong" : "Moderate")
+
+// ===================================================
+// SECTION 6 — CHARTS & VISUAL PLOTTING
+// ===================================================
+
+plot(ema20,  "EMA 20",  color.new(#00e5ff, 60), linewidth=1)
+plot(ema50,  "EMA 50",  color.new(#ff9100, 60), linewidth=1)
+plot(ema200, "EMA 200", color.new(#d500f9, 60), linewidth=2)
+
+if show_profile_label and barstate.islast
+    color prof_col = f_get_profile_color(active_profile)
+    label.new(
+        x = bar_index + 3,
+        y = close,
+        text = "SMC V4.5 PROFILE: " + active_profile + "\nADAPTIVE SCORE: " + str.tostring(adaptive_decision_score) + "/100 (" + export_AdaptiveRating + ")" + "\nDYNAMIC THRESHOLD: " + str.tostring(dynamic_decision_threshold) + " | STATUS: " + adaptive_readiness,
+        style = label.style_label_left,
+        color = prof_col,
+        textcolor = color.black,
+        size = size.small
+    )
+
+// ===================================================
+// SECTION 7 — MASTER ADAPTIVE DASHBOARD TABLE
+// ===================================================
+
+var table db = table.new(
+    position=position.top_right,
+    columns=2,
+    rows=11,
+    bgcolor=color.new(#0d1117, 15),
+    border_color=color.new(#30363d, 0),
+    border_width=1,
+    frame_color=color.new(#58a6ff, 50),
+    frame_width=1
+)
+
+if show_dashboard and barstate.islast
+    table.cell(db, 0, 0, "SMC V4.5 ADAPTIVE ENGINE", text_color=#58a6ff, text_size=size.small, bgcolor=color.new(#161b22, 0), text_halign=text.align_center)
+    table.cell(db, 1, 0, "DYNAMIC STATUS", text_color=#8b949e, text_size=size.small, bgcolor=color.new(#161b22, 0), text_halign=text.align_center)
+
+    table.cell(db, 0, 1, "Active Market Context Profile", text_color=#c9d1d9, text_size=size.tiny)
+    color p_col = f_get_profile_color(active_profile)
+    table.cell(db, 1, 1, active_profile, text_color=p_col, text_size=size.tiny)
+
+    table.cell(db, 0, 2, "Adaptive Decision Score", text_color=#c9d1d9, text_size=size.tiny)
+    table.cell(db, 1, 2, str.tostring(adaptive_decision_score) + "/100 (" + export_AdaptiveRating + ")", text_color=adaptive_decision_score >= dynamic_decision_threshold ? #3fb950 : #d29922, text_size=size.tiny)
+
+    table.cell(db, 0, 3, "Dynamic Decision Threshold", text_color=#c9d1d9, text_size=size.tiny)
+    table.cell(db, 1, 3, str.tostring(dynamic_decision_threshold) + "/100", text_color=#e3b341, text_size=size.tiny)
+
+    table.cell(db, 0, 4, "Adaptive Readiness Status", text_color=#c9d1d9, text_size=size.tiny)
+    table.cell(db, 1, 4, adaptive_readiness, text_color=adaptive_readiness == "Ready for Execution" ? #3fb950 : #e3b341, text_size=size.tiny)
+
+    table.cell(db, 0, 5, "Adaptive Risk Environment", text_color=#c9d1d9, text_size=size.tiny)
+    table.cell(db, 1, 5, adaptive_risk, text_color=adaptive_risk == "Low Risk" ? #3fb950 : #f85149, text_size=size.tiny)
+
+    table.cell(db, 0, 6, "Profile Duration", text_color=#c9d1d9, text_size=size.tiny)
+    table.cell(db, 1, 6, str.tostring(profile_duration) + " bars", text_color=#58a6ff, text_size=size.tiny)
+
+    table.cell(db, 0, 7, "Dynamic Weights (Struct/Liq)", text_color=#c9d1d9, text_size=size.tiny)
+    table.cell(db, 1, 7, str.tostring(dyn_w_struct) + "% / " + str.tostring(dyn_w_liq) + "%", text_color=#c9d1d9, text_size=size.tiny)
+
+    table.cell(db, 0, 8, "Dynamic Weights (OB/FVG)", text_color=#c9d1d9, text_size=size.tiny)
+    table.cell(db, 1, 8, str.tostring(dyn_w_ob) + "% / " + str.tostring(dyn_w_fvg) + "%", text_color=#c9d1d9, text_size=size.tiny)
+
+    table.cell(db, 0, 9, "ADX Trend Strength", text_color=#c9d1d9, text_size=size.tiny)
+    table.cell(db, 1, 9, str.tostring(math.round(adx_val, 1)), text_color=adx_val >= 25 ? #3fb950 : #8b949e, text_size=size.tiny)
+
+    table.cell(db, 0, 10, "Current ATR (14)", text_color=#c9d1d9, text_size=size.tiny)
+    table.cell(db, 1, 10, str.tostring(math.round(atr_val, 2)), text_color=#e3b341, text_size=size.tiny)
+
+// ===================================================
+// SECTION 8 — ALERTS
+// ===================================================
+
+alertcondition(active_profile != active_profile[1], title="Adaptive Market Profile Changed", message="⚡ SMC V4.5 ADAPTIVE PROFILE CHANGED: {{ticker}} -> {{export_CurrentProfile}}")
+alertcondition(adaptive_readiness == "Ready for Execution", title="Adaptive Market Ready", message="✅ SMC V4.5 ADAPTIVE MARKET READY FOR EXECUTION: {{ticker}}")
